@@ -14,8 +14,11 @@
 # Imports
 from ovos_plugin_manager.templates.hotwords import HotWordEngine
 from ovos_utils.log import LOG
+from ovos_utils.xdg_utils import xdg_data_home
 import openwakeword
 import numpy as np
+import os
+import requests
 
 class OwwHotwordPlugin(HotWordEngine):
     """OpenWakeWord is an open-source wakeword or phrase engine that can be trained on 100% synthetic data.
@@ -26,10 +29,25 @@ class OwwHotwordPlugin(HotWordEngine):
     def __init__(self, key_phrase="hey jarvis", config=None, lang="en-us"):
         super().__init__(key_phrase, config, lang)
 
-        # Load openWakeWord model
         pretrained_models = openwakeword.get_pretrained_model_paths()
+        models = self.config.get('models', [i for i in pretrained_models if key_phrase in i])
+
+        model_storage_path = f"{xdg_data_home()}/openwakeword"
+        os.makedirs(model_storage_path, exist_ok=True)
+        for model in models:
+            if model.startswith("http"):
+                file_name = model.rsplit("/", -1)
+                model_name = file_name.split('.')[0]
+                path = f"{model_storage_path}/{model_name}"
+                if not os.path.isdir(path):
+                    os.makedirs(path, exist_ok=True)
+                    data = requests.get(model, timeout=120)
+                    with open(f"{path}/{file_name}", "wb") as f:
+                        f.write(data.content)
+                model = f"{path}/{file_name}"
+        
         self.model = openwakeword.Model(
-            wakeword_model_paths=self.config.get('models', [i for i in pretrained_models if key_phrase in i]),
+            wakeword_model_paths=models,
             custom_verifier_models=self.config.get('custom_verifier_models', {}),
             custom_verifier_threshold=self.config.get('custom_verifier_threshold', 0.1),
             inference_framework=self.config.get('inference_framework', 'tflite')
